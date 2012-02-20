@@ -466,7 +466,7 @@ module Technoweenie # :nodoc:
             @temp_paths.clear
             @saved_attachment = nil
             #callback :after_attachment_saved
-            callback_with_args :after_attachment_saved, nil
+            callback_with_args :after_attachment_saved, self
           end
         end
 
