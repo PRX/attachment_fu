@@ -1,3 +1,7 @@
+* April 23, 2012 *
+* updating the prx.org app, I need a version of this that works with rails 2.3 and ruby 1.9.3, making changes for that.
+* merged in https://github.com/bhushangahire/attachment_fu,  rails3 branch
+
 * Apr 17 2008 *
 * amazon_s3.yml is now passed through ERB before being passed to AWS::S3 [François Beausoleil]
 
