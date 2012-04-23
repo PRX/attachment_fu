@@ -1,7 +1,10 @@
+require 'technoweenie/attachment_fu/backends'
+require 'technoweenie/attachment_fu/processors'
+
 module Technoweenie # :nodoc:
   module AttachmentFu # :nodoc:
-    @@default_processors = %w(ImageScience Rmagick MiniMagick Gd2 CoreImage)
-    @@tempfile_path      = (Rails.root || Pathname.new('')).join( 'tmp', 'attachment_fu')
+    @@default_processors = %w(image_science rmagick mini_magick gd2 core_image)
+    @@tempfile_path      = File.join(Rails.root.to_s, 'tmp', 'attachment_fu')
     @@content_types      = [
       'image/jpeg',
       'image/pjpeg',
@@ -128,6 +131,7 @@ module Technoweenie # :nodoc:
           begin
             if processors.any?
               attachment_options[:processor] = processors.first
+              require "technoweenie/attachment_fu/processors/#{attachment_options[:processor].to_s}_processor"
               processor_mod = Technoweenie::AttachmentFu::Processors.const_get("#{attachment_options[:processor].to_s.classify}Processor")
               include processor_mod unless included_modules.include?(processor_mod)
             end
@@ -139,6 +143,7 @@ module Technoweenie # :nodoc:
           end
         else
           begin
+            require "technoweenie/attachment_fu/processors/#{attachment_options[:processor].to_s}_processor"
             processor_mod = Technoweenie::AttachmentFu::Processors.const_get("#{attachment_options[:processor].to_s.classify}Processor")
             include processor_mod unless included_modules.include?(processor_mod)
           rescue Object, Exception
@@ -183,9 +188,10 @@ module Technoweenie # :nodoc:
         base.after_save :after_process_attachment
         base.after_destroy :destroy_file
         base.after_validation :process_attachment
-        #if defined?(::ActiveSupport::Callbacks)
-        #  base.define_callbacks :after_resize, :after_attachment_saved, :before_thumbnail_saved
-        #end
+        if defined?(::ActiveSupport::Callbacks)
+          base.define_callbacks :resize, :kind => :after
+          base.define_callbacks :thumbnail_saved, :kind => :before
+        end
       end
 
       unless defined?(::ActiveSupport::Callbacks)
@@ -199,19 +205,6 @@ module Technoweenie # :nodoc:
         #   end
         def after_resize(&block)
           write_inheritable_array(:after_resize, [block])
-        end
-
-        # Callback after an attachment has been saved either to the file system or the DB.
-        # Only called if the file has been changed, not necessarily if the record is updated.
-        #
-        #   class Foo < ActiveRecord::Base
-        #     acts_as_attachment
-        #     after_attachment_saved do |record|
-        #       ...
-        #     end
-        #   end
-        def after_attachment_saved(&block)
-          write_inheritable_array(:after_attachment_saved, [block])
         end
 
         # Callback before a thumbnail is saved.  Use this to pass any necessary extra attributes that may be required.
@@ -255,7 +248,12 @@ module Technoweenie # :nodoc:
 
     module InstanceMethods
       def self.included(base)
-        base.define_callbacks *[:after_resize, :after_attachment_saved, :before_thumbnail_saved] if base.respond_to?(:define_callbacks)
+        if base.respond_to?(:define_callbacks)
+          base.class_eval do
+            define_callbacks :resize, :attachment_saved, :kind => :after
+            define_callbacks :thumbnail_saved, :kind => :before
+          end
+        end
       end
 
       # Checks whether the attachment's content type is an image content type
@@ -466,7 +464,6 @@ module Technoweenie # :nodoc:
             save_to_storage
             @temp_paths.clear
             @saved_attachment = nil
-            #callback :after_attachment_saved
             callback_with_args :after_attachment_saved, self
           end
         end
@@ -482,9 +479,7 @@ module Technoweenie # :nodoc:
 
         if defined?(Rails) && Rails::VERSION::MAJOR >= 3
           def callback_with_args(method, arg = self)
-            if respond_to?(method)
-              send(method, arg)
-            end
+            send(method, arg) if respond_to?(method)
           end
         # Yanked from ActiveRecord::Callbacks, modified so I can pass args to the callbacks besides self.
         # Only accept blocks, however
