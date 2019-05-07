@@ -11,5 +11,5 @@ Gem::Specification.new do |s|
   s.require_paths = ["lib", "vendor"]
   s.rubygems_version = %q{1.3.1}
   s.summary = %q{Adds has_attachment properties to ActiveRecord}
-  s.add_runtime_dependency 'aws-s3'
+  s.add_runtime_dependency 'aws-sdk-v1'
 end

@@ -7,8 +7,7 @@ module Technoweenie # :nodoc:
       #
       # == Requirements
       #
-      # Requires the {AWS::S3 Library}[http://amazon.rubyforge.org] for S3 by Marcel Molina Jr. installed either
-      # as a gem or a as a Rails plugin.
+      # Requires the {aws-sdk-v1}[https://github.com/aws/aws-sdk-ruby/tree/aws-sdk-v1] gem.
       #
       # == Configuration
       #
@@ -176,10 +175,9 @@ module Technoweenie # :nodoc:
           mattr_reader :bucket_name, :s3_config
 
           begin
-            require 'aws/s3'
-            include AWS::S3
+            require 'aws-sdk-v1'
           rescue LoadError
-            raise RequiredLibraryNotFoundError.new('AWS::S3 could not be loaded')
+            raise RequiredLibraryNotFoundError.new('aws-sdk-v1 could not be loaded')
           end
 
           begin
@@ -198,7 +196,7 @@ module Technoweenie # :nodoc:
           end
           base.class_eval(eval_string, __FILE__, __LINE__)
 
-          Base.establish_connection!(s3_config.slice(:access_key_id, :secret_access_key, :server, :port, :use_ssl, :persistent, :proxy))
+          AWS.config(s3_config.slice(:access_key_id, :secret_access_key))
 
           # Bucket.create(@@bucket_name)
 
@@ -210,7 +208,7 @@ module Technoweenie # :nodoc:
         end
 
         def self.hostname
-          @hostname ||= s3_config[:server] || AWS::S3::DEFAULT_HOST
+          @hostname ||= s3_config[:server] || AWS.s3.client.endpoint
         end
 
         def self.port_string
@@ -273,7 +271,8 @@ module Technoweenie # :nodoc:
         #
         # The optional thumbnail argument will output the thumbnail's filename (if any).
         def s3_url(thumbnail = nil)
-          File.join(s3_protocol + s3_hostname + s3_port_string, bucket_name, full_filename(thumbnail))
+          object = AWS.s3.buckets[bucket_name].objects[full_filename(thumbnail)]
+          object.public_url(:secure => s3_protocol == 'https://').to_s
         end
         
         # All public objects are accessible via a GET request to CloudFront. You can generate a
@@ -323,9 +322,12 @@ module Technoweenie # :nodoc:
         #   @photo.authenticated_s3_url('thumbnail', :expires_in => 5.hours, :use_ssl => true)
         def authenticated_s3_url(*args)
           options   = args.extract_options!
-          options[:expires_in] = options[:expires_in].to_i if options[:expires_in]
+          options[:expires] = options[:expires_in].to_i if options[:expires_in]
+          options[:signature_version] = :v4
+          options[:secure] = s3_protocol == 'https://'
           thumbnail = args.shift
-          S3Object.url_for(full_filename(thumbnail), bucket_name, options)
+          object = AWS.s3.buckets[bucket_name].objects[full_filename(thumbnail)]
+          object.url_for(:read, options).to_s
         end
 
         def create_temp_file
@@ -333,7 +335,8 @@ module Technoweenie # :nodoc:
         end
 
         def current_data
-          S3Object.value full_filename, bucket_name
+          resp = AWS.s3.client.get_object(:bucket_name => bucket_name, :key => full_filename)
+          resp[:data]
         end
 
         def s3_protocol
@@ -355,7 +358,7 @@ module Technoweenie # :nodoc:
         protected
           # Called in the after_destroy callback
           def destroy_file
-            S3Object.delete full_filename, bucket_name
+            AWS.s3.client.delete_object(:bucket_name => bucket_name, :key => full_filename)
           end
 
           def rename_file
@@ -363,12 +366,13 @@ module Technoweenie # :nodoc:
 
             old_full_filename = File.join(base_path, @old_filename)
 
-            S3Object.rename(
-              old_full_filename,
-              full_filename,
-              bucket_name,
-              :access => attachment_options[:s3_access]
+            AWS.s3.client.copy_object(
+              :bucket_name => bucket_name,
+              :key => full_filename,
+              :copy_source => "#{bucket_name}/#{old_full_filename}",
+              :acl => attachment_options[:s3_access]
             )
+            AWS.s3.client.delete_object(:bucket_name => bucket_name, :key => old_full_filename)
 
             @old_filename = nil
             true
@@ -376,12 +380,12 @@ module Technoweenie # :nodoc:
 
           def save_to_storage
             if save_attachment?
-              S3Object.store(
-                full_filename,
-                (temp_path ? File.open(temp_path) : temp_data),
-                bucket_name,
+              AWS.s3.client.put_object(
+                :bucket_name => bucket_name,
+                :key => full_filename,
+                :data => (temp_path ? File.open(temp_path) : temp_data),
                 :content_type => content_type,
-                :access => attachment_options[:s3_access]
+                :acl => attachment_options[:s3_access]
               )
             end
 

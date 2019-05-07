@@ -37,7 +37,7 @@ FIXTURE_PATH = File.dirname(__FILE__) + "/fixtures"
 $LOAD_PATH.unshift(FIXTURE_PATH)
 
 class Test::Unit::TestCase #:nodoc:
-  include ActionDispatch::TestProcess
+  include ActionController::TestProcess
   def create_fixtures(*table_names)
     if block_given?
       Fixtures.create_fixtures(FIXTURE_PATH, table_names) { yield }
