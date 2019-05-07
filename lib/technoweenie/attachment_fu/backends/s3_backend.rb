@@ -323,8 +323,8 @@ module Technoweenie # :nodoc:
         def authenticated_s3_url(*args)
           options   = args.extract_options!
           options[:expires] = options[:expires_in].to_i if options[:expires_in]
+          options[:secure] = options[:use_ssl] || s3_protocol == 'https://'
           options[:signature_version] = :v4
-          options[:secure] = s3_protocol == 'https://'
           thumbnail = args.shift
           object = AWS.s3.buckets[bucket_name].objects[full_filename(thumbnail)]
           object.url_for(:read, options).to_s
